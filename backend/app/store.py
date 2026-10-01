@@ -37,8 +37,11 @@ class Store:
                 "pending": sum(1 for row in rows if row.get("pending")),
                 "abnormal": sum(1 for row in rows if row.get("abnormal")),
             })
+        # 在用台数永远跟着使用登记明细重算，登记/停用/注销一变这里就变
+        in_use = sum(1 for row in self.rows("register") if row.get("status") == "已登记")
         cards = [
             {"label": "业务模块", "value": len(modules)},
+            {"label": "在用台数", "value": in_use},
             {"label": "今日新增", "value": sum(int(item["created"]) for item in modules)},
             {"label": "待处理", "value": sum(int(item["pending"]) for item in modules)},
             {"label": "异常量", "value": sum(int(item["abnormal"]) for item in modules)},

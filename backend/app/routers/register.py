@@ -1,4 +1,4 @@
-"""使用登记接口：维护设备登记，覆盖办理登记、申请停用、申请注销等动作。"""
+"""使用登记接口：维护设备登记，覆盖办理登记、申请停用、解停恢复、申请注销等动作。"""
 from __future__ import annotations
 
 from typing import Any
@@ -30,6 +30,19 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/stats")
+def register_stats() -> dict[str, int]:
+    """在用/停用等台数按登记明细实时重算，供列表页与概览共用同一口径。"""
+    return service.stats()
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出使用登记清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "register", "total": total, "items": items}
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条设备登记明细；不存在时给出可读的错误说明。"""
@@ -41,25 +54,20 @@ def get_entry(entry_id: int) -> dict:
 
 @router.post("", response_model=ActionResult)
 def create_entry(payload: EntryPayload) -> ActionResult:
-    """登记一条设备登记，缺字段时说明原因而不是静默丢弃。"""
-    entry, missing = service.create_entry(payload.values)
-    if missing:
-        return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
-    return ActionResult(ok=True, message="设备登记已登记", entry=entry)
-
-
-@router.post("/{entry_id}/actions", response_model=ActionResult)
-def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条设备登记执行办理登记、申请停用、申请注销；不允许的动作会被拦下并说明原因。"""
-    action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
+    """提交设备登记：缺登记证号/使用单位等必填项时点名退回；同一设备重复提交只另存备注。"""
+    operator = str(payload.values.pop("operator", "") or "").strip() or None
+    entry, message = service.create_entry(payload.values, operator=operator, remark=payload.remark)
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
 
 
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出使用登记清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "register", "total": total, "items": items}
+@router.post("/{entry_id}/actions", response_model=ActionResult)
+def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
+    """对单条设备登记执行动作；跳步申请会被当场退回，并说明卡在哪一步。"""
+    action = str(payload.values.get("action") or "").strip()
+    operator = str(payload.values.get("operator") or "").strip() or None
+    entry, message = service.run_action(entry_id, action, operator=operator)
+    if entry is None:
+        return ActionResult(ok=False, message=message)
+    return ActionResult(ok=True, message=message, entry=entry)
