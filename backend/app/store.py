@@ -31,15 +31,22 @@ class Store:
         modules: list[dict[str, object]] = []
         for name in self.module_names():
             rows = self.rows(name)
-            modules.append({
+            item: dict[str, object] = {
                 "name": name,
                 "created": len(rows),
                 "pending": sum(1 for row in rows if row.get("pending")),
                 "abnormal": sum(1 for row in rows if row.get("abnormal")),
-            })
+            }
+            if name == "register":
+                # 使用登记口径：只有「已登记」才算在用，随明细实时重算。
+                item["in_use"] = sum(1 for row in rows if row.get("status") == "已登记")
+            modules.append(item)
+        register_rows = self.rows("register")
+        in_use = sum(1 for row in register_rows if row.get("status") == "已登记")
         cards = [
             {"label": "业务模块", "value": len(modules)},
             {"label": "今日新增", "value": sum(int(item["created"]) for item in modules)},
+            {"label": "在用台数", "value": in_use},
             {"label": "待处理", "value": sum(int(item["pending"]) for item in modules)},
             {"label": "异常量", "value": sum(int(item["abnormal"]) for item in modules)},
         ]
